@@ -1,0 +1,18 @@
+# Original game files and acquisition archives stay local.
+/assets/
+
+# Generated executables, reference images, reports and test fixtures.
+/build/
+/oracle/
+
+# Downloaded tools and Python dependencies; retain setup documentation.
+/tools/*
+!/tools/README.md
+
+__pycache__/
+*.py[cod]
+*.OBJ
+*.TPU
+*.MAP
+*.EXE
+*.OLD

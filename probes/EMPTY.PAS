@@ -1,0 +1,3 @@
+program Prazdny;
+begin
+end.
