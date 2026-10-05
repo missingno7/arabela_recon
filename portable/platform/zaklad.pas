@@ -21,7 +21,10 @@ procedure Sound(hz : word);
 procedure NoSound;
 procedure Delay(ms : word);
 procedure GetDate(var rok, mesic, den, denvtydnu : word);
+function CtiSkore(var data; velikost : integer) : boolean;
+function PisSkore(const data; velikost : integer) : boolean;
 implementation
+uses Classes, {$IFDEF WINDOWS}Windows{$ELSE}BaseUnix{$ENDIF};
 var sloupec : integer = 1;
 
 function Zapis(var f : TextRec) : integer;
@@ -52,6 +55,7 @@ begin
     FlushFunc := @Zapis;
     CloseFunc := @Zavri
   end;
+  TextRec(Output).LineEnd := #10;
   sloupec := 1
 end;
 
@@ -88,4 +92,38 @@ begin
   DecodeDate(Date,rok,mesic,den);
   denvtydnu := DayOfWeek(Date)-1
 end;
+
+function CtiSkore(var data; velikost : integer) : boolean;
+var f : TFileStream;
+begin
+  Result := false;
+  try
+    f := TFileStream.Create(SouborSkore,fmOpenRead or fmShareDenyWrite);
+    try
+      if f.Size <> velikost then Exit;
+      f.ReadBuffer(data,velikost); Result := true
+    finally f.Free end
+  except Result := false end
+end;
+
+function PisSkore(const data; velikost : integer) : boolean;
+var f : TFileStream; docasny : UTF8String;
+begin
+  Result := false; docasny := SouborSkore+'.new';
+  try
+    f := TFileStream.Create(docasny,fmCreate);
+    try f.WriteBuffer(data,velikost) finally f.Free end;
+    {$IFDEF WINDOWS}
+    Result := MoveFileExW(PWideChar(UTF8Decode(docasny)),PWideChar(UTF8Decode(SouborSkore)),
+                          MOVEFILE_REPLACE_EXISTING or $8); { MOVEFILE_WRITE_THROUGH }
+    {$ELSE}
+    Result := fpRename(PAnsiChar(docasny),PAnsiChar(SouborSkore)) = 0;
+    {$ENDIF}
+  except Result := false end;
+  if not Result then SysUtils.DeleteFile(docasny)
+end;
+initialization
+  { Windows ACP nesmi menit UTF-8 v nazvech, historii ani souborech. }
+  SetMultiByteConversionCodePage(CP_UTF8);
+  SetMultiByteRTLFileSystemCodePage(CP_UTF8);
 end.

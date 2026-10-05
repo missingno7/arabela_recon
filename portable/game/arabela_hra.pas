@@ -55,7 +55,6 @@ var
   zacatek, ted, dalsiOdstup, odstup, doba : LongInt;
   konec : boolean;
   zde : obsahMistnosti;
-  soubor : file of tabulka;
   nejlepsi : tabulka;
   priznak9, prvniPrikaz : boolean;
 
@@ -83,7 +82,6 @@ function MalaPismena(s : string) : string;
 function JePrazdne(var predmet : shortint) : boolean;
 procedure VymazPredmet(var predmet : shortint);
 function StejnaPoloha(var prvni,druha : poloha) : boolean;
-procedure JmenoSouboru;
 procedure NactiSkore;
 procedure UlozSkore;
 function ZapisSkore(doba : LongInt) : word;
@@ -92,28 +90,30 @@ procedure OverPrikazy;
 {$ENDIF}
 
 implementation
-procedure JmenoSouboru;
-begin Assign(soubor,SouborSkore) end;
-
 procedure NactiSkore;
+var i : integer; platne : boolean;
 begin
-  FileMode := 0;
-  Reset(soubor);
-  if IOResult <> 0 then nejlepsi.pocet := 0
-  else
+  FillChar(nejlepsi,SizeOf(nejlepsi),0);
+  if not CtiSkore(nejlepsi,SizeOf(nejlepsi)) then
+    FillChar(nejlepsi,SizeOf(nejlepsi),0);
+  platne := nejlepsi.pocet <= 11;
+  if platne then
   begin
-    Read(soubor,nejlepsi);
-    Close(soubor);
-    if (IOResult <> 0) or (nejlepsi.pocet > 11) then nejlepsi.pocet := 0
-  end
+    for i := 1 to nejlepsi.pocet do
+    begin
+      platne := platne and (Length(nejlepsi.hraci[i].jmeno) <= 20) and
+                           (nejlepsi.hraci[i].cas >= 0);
+      if i > 1 then platne := platne and (nejlepsi.hraci[i-1].cas <= nejlepsi.hraci[i].cas)
+    end;
+    for i := nejlepsi.pocet+1 to 11 do FillChar(nejlepsi.hraci[i],SizeOf(zaznam),0)
+  end;
+  if not platne then FillChar(nejlepsi,SizeOf(nejlepsi),0)
 end;
 
 procedure UlozSkore;
 begin
-  Rewrite(soubor);
-  Write(soubor,nejlepsi);
-  Close(soubor);
-  if IOResult <> 0 then begin end
+  if not PisSkore(nejlepsi,SizeOf(nejlepsi)) then
+    WriteLn('Pozor: tabulku nejlepsich se nepodarilo ulozit.')
 end;
 
 function ZapisSkore(doba : LongInt) : word;
@@ -1056,7 +1056,6 @@ begin
   Write(n,' minut');
   if n = 1 then Write('u') else if (n < 5) and (n > 1) then Write('y');
   WriteLn('.');
-  JmenoSouboru;
   NactiSkore;
   i := poradiSkore;
   if i < 12 then
@@ -1119,9 +1118,9 @@ procedure OdesliPrikaz(const prikaz : UTF8String);
 var s : string; i : word;
 begin
   if faze = Hotovo then Exit;
-  s := Trim(prikaz);
+  if prikaz = #27 then s := #27 else s := Trim(prikaz);
   if s = '' then Exit;
-  WriteLn('> ',s);
+  if s = #27 then WriteLn('> odejdi') else WriteLn('> ',s);
   if faze = Odchod then
   begin
     if UpCase(s[1]) = 'A' then
@@ -1154,7 +1153,6 @@ begin
   begin
     doba := Cas-zacatek;
     if doba < 0 then doba := 0;
-    JmenoSouboru;
     NactiSkore;
     i := nejlepsi.pocet+1;
     while (i > 1) and (nejlepsi.hraci[i-1].cas > doba) do Dec(i);
