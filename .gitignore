@@ -16,3 +16,11 @@ __pycache__/
 *.MAP
 *.EXE
 *.OLD
+
+# Native Pascal/compiler and platform output.
+*.o
+*.ppu
+*.a
+*.dll
+*.so
+*.dylib
