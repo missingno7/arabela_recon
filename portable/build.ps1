@@ -19,7 +19,7 @@ if ($Tests) {
     if ($LASTEXITCODE -ne 0 -or (Get-Content RESULT.TXT -Raw) -notmatch 'PASS actions 63') { throw 'Portable oracle comparison failed' }
     Write-Host 'PASS: same 63 command/event assertions as the historical DOS oracle.'
   } finally { Pop-Location }
-  foreach ($taskTest in @('semena','pruchod','skore')) {
+  foreach ($taskTest in @('semena','pruchod','skore','casovani','cas_oracle')) {
     & $Compiler @taskOptions ('-FU'+(Join-Path $taskOut 'testunits')) (Join-Path $PSScriptRoot ('tests\'+$taskTest+'.pas'))
     if ($LASTEXITCODE -ne 0) { throw "Portable $taskTest compilation failed" }
     Push-Location $taskOut
@@ -32,10 +32,15 @@ if ($Tests) {
   }
   Get-Content (Join-Path $taskOut 'walkthrough-results.txt')
   Get-Content (Join-Path $taskOut 'score-results.txt')
+  Get-Content (Join-Path $taskOut 'timing-results.txt')
   if ((Get-FileHash (Join-Path $taskOut 'SEED.BIN') -Algorithm SHA256).Hash.ToLower() -ne '5aa9232c0632a33eac8ac08aed3bf62c257a28a3f7a0baf02226494c690295fa') {
     throw 'Seeded RNG/world regression: differs from independently captured TP6 oracle'
   }
   Write-Host 'PASS: 50 RNG outputs/seeds and 10 initial worlds match the TP6 golden hash.'
+  if ((Get-FileHash (Join-Path $taskOut 'TIME.BIN') -Algorithm SHA256).Hash.ToLower() -ne 'bdf1d1f8826ac2bf340a75cce4ba52d3d5ff717b3e538f1668cd9d984a3e881a') {
+    throw 'Delay/event time-state vector differs from independently captured TP6 oracle'
+  }
+  Write-Host 'PASS: character/alarm delays and six event transitions match the TP6 virtual-clock trace.'
   if ($Oracle) { & (Join-Path $PSScriptRoot 'tests\oracle.ps1') }
 }
 if (Test-Path (Join-Path $PSScriptRoot 'arabela.lpr')) {

@@ -1,5 +1,6 @@
 { Test-only TP6 instrumentation. Does not change any historical source file. }
 {$I STAV.INC}
+{$I CAS_DOS.INC}
 
 procedure Overeni;
 const meze : array[0..9] of word = (0,1,2,3,4,5,16,19,32767,65535);
@@ -26,11 +27,14 @@ begin
   end;
   Close(f);
   RandSeed := 12345678; Rozmisteni;
+  { Unused while cil=-1; DOS uninitialized storage depends on probe layout. }
+  dotazNaPredmet := false;
   konec := false; VymazPredmet(cil); PopisMistnosti;
   Assign(prikazy,'COMMANDS.TXT'); Reset(prikazy);
   while not EOF(prikazy) and not konec do
   begin ReadLn(prikazy,prikaz); ProvedPrikaz(prikaz) end;
   Close(prikazy);
   if not konec then Halt(1);
-  ZapisStav
+  ZapisStav;
+  OverCas
 end;

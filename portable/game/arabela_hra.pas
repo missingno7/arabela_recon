@@ -79,6 +79,7 @@ function Udalost : boolean;
 procedure ProvedPrikaz(prikaz : string);
 function Cas : LongInt;
 function MalaPismena(s : string) : string;
+procedure Vypis(s : string);
 function JePrazdne(var predmet : shortint) : boolean;
 procedure VymazPredmet(var predmet : shortint);
 function StejnaPoloha(var prvni,druha : poloha) : boolean;
@@ -130,7 +131,6 @@ begin
   with nejlepsi.hraci[i] do
   begin
     if nejlepsi.pocet < 11 then Inc(nejlepsi.pocet);
-    WriteLn('Gratuluji, dostal jste se do seznamu nejlepsich - jste ',i,'.');
     jmeno := jmenoHrace;
     cas := doba;
     GetDate(rok,mesic,den,denvtydnu);
@@ -159,7 +159,22 @@ begin
 end;
 
 procedure Vypis(s : string);
-begin Write(s) end;
+var i,j : word;
+begin
+  i := 1;
+  while i <= Length(s) do
+  begin
+    j := i+1;
+    while (j <= Length(s)) and ((byte(s[j]) and $C0) = $80) do Inc(j);
+    Write(Copy(s,i,j-i));
+    if s[i] <> ' ' then
+    begin
+      Sound(330); Delay(10);
+      NoSound; Delay(50)
+    end;
+    i := j
+  end
+end;
 
 procedure ProhledejMistnost(x, y, z : word);
 var
@@ -1037,7 +1052,7 @@ begin
   Vypis('Preji prijemnou hru !'); WriteLn
 end;
 
-procedure DokonciHru;
+procedure VypisVysledek;
 var i : word; n : LongInt;
 begin
   Write('<');
@@ -1056,7 +1071,11 @@ begin
   Write(n,' minut');
   if n = 1 then Write('u') else if (n < 5) and (n > 1) then Write('y');
   WriteLn('.');
-  NactiSkore;
+end;
+
+procedure DokonciHru;
+var i : word;
+begin
   i := poradiSkore;
   if i < 12 then
   begin
@@ -1118,17 +1137,18 @@ procedure OdesliPrikaz(const prikaz : UTF8String);
 var s : string; i : word;
 begin
   if faze = Hotovo then Exit;
-  if prikaz = #27 then s := #27 else s := Trim(prikaz);
-  if s = '' then Exit;
+  s := prikaz;
+  if (s = '') and (faze <> Jmeno) then Exit;
   if s = #27 then WriteLn('> odejdi') else WriteLn('> ',s);
   if faze = Odchod then
   begin
     if UpCase(s[1]) = 'A' then
     begin
+      WriteLn('Ano.');
       WriteLn('Program VYSVOBOD PRINCEZNU ARABELU se s Vami louci !');
       faze := Hotovo
     end
-    else if UpCase(s[1]) = 'N' then faze := Hra;
+    else if UpCase(s[1]) = 'N' then begin WriteLn('Ne.'); faze := Hra end;
     ObnovPrikazy;
     Exit
   end;
@@ -1146,20 +1166,22 @@ begin
   else if s = #27 then
   begin
     faze := Odchod;
-    WriteLn('Prejes si odejit ?  (Stiskni A=Ano nebo N=Ne): ')
+    Vypis('Prejes si odejit ?  (Stiskni A=Ano nebo N=Ne): '); WriteLn
   end
   else ProvedPrikaz(Copy(s,1,60));
   if konec then
   begin
     doba := Cas-zacatek;
     if doba < 0 then doba := 0;
+    VypisVysledek;
     NactiSkore;
     i := nejlepsi.pocet+1;
     while (i > 1) and (nejlepsi.hraci[i-1].cas > doba) do Dec(i);
     poradiSkore := i;
     if i < 12 then
     begin
-      WriteLn('Arabela je vysvobozena. Zadejte svoje jmeno pro tabulku nejlepsich:');
+      WriteLn('Gratuluji, dostal jste se do seznamu nejlepsich - jste ',i,'.');
+      Write('Zadejte svoje jmeno: ');
       faze := Jmeno
     end
     else DokonciHru

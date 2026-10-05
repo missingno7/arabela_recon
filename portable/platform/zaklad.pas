@@ -5,9 +5,11 @@ uses SysUtils;
 type
   zapisTextu = procedure(const s : UTF8String);
   zdrojCasu = function : QWord;
+  cekaciPostup = procedure(ms : word);
 var
   Vystup : zapisTextu;
   Hodiny : zdrojCasu;
+  Cekani : cekaciPostup;
   Potichu : boolean;
   RandSeed : LongInt;
   SouborSkore : UTF8String;
@@ -17,6 +19,7 @@ function WhereY : integer;
 function CasSekundy : LongInt;
 function Random(mez : word) : word;
 procedure Randomize;
+function SemenoCasu : LongInt;
 procedure Sound(hz : word);
 procedure NoSound;
 procedure Delay(ms : word);
@@ -81,12 +84,21 @@ begin
 end;
 procedure Randomize;
 begin { Semeno urcuje volajici NovaHra, take v testech. } end;
+function SemenoCasu : LongInt;
+var h,m,s,ms : word;
+begin
+  { TP6 Randomize uklada CX a DX z DOS GetTime (hodina/minuta, sekunda/setina). }
+  DecodeTime(Now,h,m,s,ms);
+  Result := LongInt((LongWord((s shl 8) or (ms div 10)) shl 16) or (h shl 8) or m)
+end;
 procedure Sound(hz : word);
 begin end;
 procedure NoSound;
 begin end;
 procedure Delay(ms : word);
-begin { Prvni port nema zvuk ani blokujici animaci psani. } end;
+begin
+  if not Potichu and Assigned(Cekani) then Cekani(ms)
+end;
 procedure GetDate(var rok, mesic, den, denvtydnu : word);
 begin
   DecodeDate(Date,rok,mesic,den);

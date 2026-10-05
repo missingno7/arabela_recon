@@ -54,6 +54,14 @@ Page Up/Down scroll history; wheel over the action area scrolls actions.
 Ctrl +/- changes font size. Escape asks A/N; F2 starts a new game.
 Closing the window exits directly. There is no save-game feature yet.
 
+Game text now uses the original `Vypis` cadence: 10 ms then 50 ms per
+non-space character, with immediate spaces. Clicked commands are written
+in the input line at that cadence before submission. Keyboard typing and
+the original shortcut autofill remain immediate. Resize/scroll/quit still
+work while text appears; gameplay input during output is discarded. See
+[the behavior audit](BEHAVIOR.md) for event scheduling, restored details
+and remaining losses.
+
 Scores default to [SDL_GetPrefPath](https://wiki.libsdl.org/SDL3/SDL_GetPrefPath)
 for `Arabela Recon/Arabela`, with filename `ARABELA.SCO`. `--scores` supplies
 an explicit alternative path. An original 342-byte SCO can be read through
@@ -90,7 +98,8 @@ and Android packaging are later work.
 
 ## Intentional differences
 
-* No VGA intro, typewriter delays or PC-speaker sound in this milestone.
+* No VGA intro or PC-speaker sound yet. Original text and event-alarm waits
+  are preserved, with a cooperative SDL rendering/event pump.
 * Text wrapping belongs to the frontend; there is no fixed 80x25 screen.
 * Elapsed monotonic seconds replace TP6's overflowing 16-bit wall-clock
   expression and midnight adjustment. The event condition and intervals
@@ -99,7 +108,8 @@ and Android packaging are later work.
   is empty. Losing focus/backgrounding pauses the elapsed clock, avoiding
   offscreen events and excluding time spent suspended from the score.
 * Random placement and events use the original TP6 LCG and high-word
-  modulo range reduction, rather than Free Pascal's different RNG.
+  modulo range reduction, rather than Free Pascal's different RNG. Automatic
+  seeds also use the original hour/minute/second/hundredth packing.
 * Name entry and exit confirmation are nonblocking game phases. Completing
   a game freezes its elapsed score before asking for a name.
 * Scores retain the packed 342-byte layout and ordering. The storage path
@@ -132,9 +142,13 @@ pause and the complete walkthrough, and saves rendered screenshots in
 Tests pass with both the dummy/software backend and the native Windows
 renderer (`build.ps1 -Tests -VideoDriver windows`).
 
+The full smoke walkthrough is accelerated in a test-only build. A separate
+real SDL wait test checks the progressive clicked-command display and
+responsive resize/input handling. Production text uses the original waits.
+
 `build.ps1 -Tests -Oracle` additionally builds a test-only TP6 probe in
-ignored output and compares binary state vectors. It replaces random
-seeding and presentation delays only in that generated test file; historical
+ignored output and compares binary state vectors. It instruments random
+seeding, clock and delays only in that generated test file; historical
 sources remain unchanged. This option requires the already configured DOS
 tools and `build/first/ELEPS.TPU`. Fresh checks confirm:
 
@@ -145,6 +159,14 @@ tools and `build/first/ELEPS.TPU`. Fresh checks confirm:
   runtimes and leaves identical character/object positions, player position,
   special locations, hands, query target and game flags. The 249-byte vector
   has SHA-256 `d88b5b60b00a2f49abcc6f21ba9b1baaf4d032b73018e9d2f0831958bb899f6fa`.
+  The inactive initial query discriminator is explicitly initialized in
+  the DOS fixture because its otherwise uninitialized byte depends on the
+  generated probe layout.
+* 27 matching virtual-clock samples covering text/prompt waits, alarm waits,
+  six event transitions, threshold boundaries and corresponding state:
+  7,290 bytes, SHA-256
+  `bdf1d1f8826ac2bf340a75cce4ba52d3d5ff717b3e538f1668cd9d984a3e881a`.
+  The clock checks isolate game semantics; they are not a DOS hardware benchmark.
 
 ## Next platform work
 
@@ -161,6 +183,9 @@ name, completion phase and RNG seed. Store relative elapsed times, and save
 pending frontend text separately. Room caches and valid actions are derived
 and should be rebuilt on restore. This design work does not add a second
 state implementation to the playable milestone.
+Take save checkpoints at idle command/event boundaries: cooperative text
+waits keep the current Pascal procedure active, so a half-finished exchange
+or event is not a complete restorable checkpoint.
 
 Downloaded compilers, SDL libraries and all generated artifacts stay in
 ignored `tools/portable` and `build/portable` directories.

@@ -19,6 +19,10 @@ test:
 	cd $(OUT) && ./pruchod && cat walkthrough-results.txt
 	$(FPC) $(FLAGS) -FU$(OUT)/testunits tests/skore.pas
 	cd $(OUT) && ./skore && cat score-results.txt
+	$(FPC) $(FLAGS) -FU$(OUT)/testunits tests/casovani.pas
+	cd $(OUT) && ./casovani && cat timing-results.txt
+	$(FPC) $(FLAGS) -FU$(OUT)/testunits tests/cas_oracle.pas
+	cd $(OUT) && ./cas_oracle && echo 'bdf1d1f8826ac2bf340a75cce4ba52d3d5ff717b3e538f1668cd9d984a3e881a  TIME.BIN' | sha256sum -c -
 	$(FPC) $(FLAGS) -FU$(OUT)/testunits -dOVERENI_OKNA arabela.lpr
 	mkdir -p $(OUT)/smoke
 	SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software $(OUT)/arabela --smoke $(OUT)/smoke --scores $(OUT)/smoke/ARABELA.SCO --seed 12345678 --walkthrough $(OUT)/walkthrough.txt

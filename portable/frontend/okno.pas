@@ -9,18 +9,21 @@ type
   radek = record
     textura : pointer;
     w,h : integer;
+    obsah : UTF8String;
+    maxsir,verze : integer;
     oblast : SDL_FRect
   end;
 var
   herniOkno, kreslic, pismo : pointer;
   historie : TStringList;
   radky, tlacitka : array of radek;
-  vstup, skladany, cestaPisma : UTF8String;
+  vstup, skladany, cestaPisma, promptPrikazu : UTF8String;
   sirka,vyska,body : integer;
   meritkoX,meritkoY : Single;
   posun,posunPrikazu,vyskaTextu,zacatekPrikazu,konecTextu : integer;
   prekreslit : boolean = true;
-  zavrit,pozastaveno : boolean;
+  zavrit,pozastaveno,zpracovavam,pisuPrompt,pisuVyber : boolean;
+  verzePisma : integer;
   pocatekPauzy,celkemPauza : QWord;
   barvaTextu : SDL_Color = (r:224; g:226; b:214; a:255);
   barvaPrikazu : SDL_Color = (r:184; g:222; b:154; a:255);
@@ -60,6 +63,7 @@ end;
 procedure VypisText(const s : UTF8String);
 var i : integer;
 begin
+  if pisuPrompt then begin promptPrikazu := promptPrikazu+s; Exit end;
   for i := 1 to Length(s) do
     if s[i] = #10 then historie.Add('')
     else if s[i] <> #13 then historie[historie.Count-1] := historie[historie.Count-1]+s[i];
@@ -71,13 +75,14 @@ end;
 procedure Uvolni(var r : radek);
 begin
   if r.textura <> nil then SDL_DestroyTexture(r.textura);
-  FillChar(r,SizeOf(r),0)
+  r.textura := nil; r.obsah := ''; r.verze := 0; r.w := 0; r.h := 0
 end;
 
 function Textura(const s : UTF8String; maxsir : integer; barva : SDL_Color) : radek;
 var plocha : PSDL_Surface;
 begin
-  FillChar(Result,SizeOf(Result),0);
+  Result.textura := nil; Result.w := 0;
+  Result.obsah := s; Result.maxsir := maxsir; Result.verze := verzePisma;
   Result.h := body+6;
   if s = '' then Exit;
   plocha := TTF_RenderText_Blended_Wrapped(pismo,PAnsiChar(s),Length(s),barva,Max(1,Round(maxsir*meritkoX)));
@@ -116,20 +121,28 @@ end;
 procedure Prelom;
 var i,x,y,h,nejvyssi,pw,ph : integer;
 begin
-  for i := 0 to High(radky) do Uvolni(radky[i]);
+  for i := historie.Count to High(radky) do Uvolni(radky[i]);
   SetLength(radky,historie.Count);
   vyskaTextu := 0;
   for i := 0 to historie.Count-1 do
   begin
-    radky[i] := Textura(historie[i],sirka-36,barvaTextu);
+    if (radky[i].obsah <> historie[i]) or (radky[i].maxsir <> sirka-36) or
+       (radky[i].verze <> verzePisma) then
+    begin
+      Uvolni(radky[i]); radky[i] := Textura(historie[i],sirka-36,barvaTextu)
+    end;
     Inc(vyskaTextu,radky[i].h+3)
   end;
-  for i := 0 to High(tlacitka) do Uvolni(tlacitka[i]);
+  for i := prikazy.Count to High(tlacitka) do Uvolni(tlacitka[i]);
   SetLength(tlacitka,prikazy.Count);
   x := 16; y := 0; nejvyssi := 0;
   for i := 0 to prikazy.Count-1 do
   begin
-    tlacitka[i] := Textura(prikazy[i],sirka-64,barvaPrikazu);
+    if (tlacitka[i].obsah <> prikazy[i]) or (tlacitka[i].maxsir <> sirka-64) or
+       (tlacitka[i].verze <> verzePisma) then
+    begin
+      Uvolni(tlacitka[i]); tlacitka[i] := Textura(prikazy[i],sirka-64,barvaPrikazu)
+    end;
     pw := Min(sirka-32,tlacitka[i].w+24);
     ph := tlacitka[i].h+14;
     if (x+pw > sirka-16) and (x > 16) then
@@ -192,12 +205,13 @@ begin
   end;
   SDL_SetRenderClipRect(kreslic,nil);
   case faze of
-    Hra : prompt := 'Zadej prikaz: ';
+    Hra : prompt := promptPrikazu;
     Jmeno : prompt := 'Tvoje jmeno: ';
     Odchod : prompt := 'Odejit? A / N: ';
     Hotovo : prompt := 'Konec hry. F2 = nova hra'
   end;
   if pozastaveno then prompt := 'Pozastaveno';
+  if zpracovavam and not pozastaveno and not pisuPrompt and not pisuVyber then prompt := '... ';
   Obdelnik(12,vyska-(body+66),sirka-24,body+38,40,48,38);
   edit := prompt+vstup+skladany+'_';
   while Length(edit) > 1 do
@@ -218,12 +232,59 @@ begin
   SDL_SetTextInputArea(herniOkno,@vstupOblast,0)
 end;
 
-procedure Odesli;
+procedure Udalosti; forward;
+
+procedure Cekej(ms : word);
+var konecCekani,posledniSnimek : QWord; predtim : boolean;
 begin
-  if vstup = '' then Exit;
-  OdesliPrikaz(vstup);
+  if zavrit then Exit;
+  predtim := zpracovavam; zpracovavam := true;
+  konecCekani := HodinyHry+ms; posledniSnimek := 0;
+  try
+    repeat
+      Udalosti; { Resize/scroll/pause/quit funguji i behem psani. }
+      if (posledniSnimek = 0) or (SDL_GetTicks-posledniSnimek >= 16) then
+      begin Nakresli; SDL_RenderPresent(kreslic); posledniSnimek := SDL_GetTicks end;
+      if zavrit or (HodinyHry >= konecCekani) then Break;
+      SDL_Delay(1)
+    until false
+  finally zpracovavam := predtim end
+end;
+
+procedure NabidniVstup;
+begin
+  if (faze <> Hra) or zavrit then Exit;
+  promptPrikazu := ''; pisuPrompt := true;
+  try Vypis('Zadej prikaz: ') finally pisuPrompt := false end
+end;
+
+procedure Odesli;
+var prikaz : UTF8String;
+begin
+  if (vstup = '') and (faze <> Jmeno) then Exit;
+  prikaz := vstup;
   vstup := ''; skladany := '';
+  OdesliPrikaz(prikaz);
+  NabidniVstup;
   posunPrikazu := 0; prekreslit := true
+end;
+
+procedure VyberPrikaz(const prikaz : UTF8String; odeslat : boolean);
+var i,j : integer;
+begin
+  vstup := ''; skladany := ''; i := 1; pisuVyber := true;
+  try
+    while i <= Length(prikaz) do
+    begin
+      j := i+1;
+      while (j <= Length(prikaz)) and ((byte(prikaz[j]) and $C0) = $80) do Inc(j);
+      vstup := vstup+Copy(prikaz,i,j-i);
+      if prikaz[i] <> ' ' then begin Delay(10); Delay(50) end;
+      i := j;
+      if zavrit then Exit
+    end
+  finally pisuVyber := false end;
+  if odeslat then Odesli
 end;
 
 procedure SmazZnak;
@@ -243,6 +304,7 @@ begin
   Musi(novePismo <> nil);
   if pismo <> nil then TTF_CloseFont(pismo);
   pismo := novePismo;
+  Inc(verzePisma);
   body := nova;
   prekreslit := true
 end;
@@ -250,7 +312,7 @@ end;
 procedure Klavesa(const e : SDL_KeyboardEvent);
 var kod : word; s : string;
 begin
-  if e.repeated then Exit;
+  if e.repeated and (e.scancode = 59) then Exit;
   if (e.modifiers and $C0) <> 0 then
   begin
     case e.key of
@@ -262,13 +324,16 @@ begin
   case e.scancode of
     40,88 : Odesli; { Enter / numericky Enter }
     42 : SmazZnak;
-    41 : begin OdesliPrikaz(#27); vstup := ''; prekreslit := true end;
-    59 : begin NovaHra(LongInt(SDL_GetTicks)); vstup := ''; prekreslit := true end; { F2 }
+    41 : if (faze = Hra) and (vstup = '') then
+      begin OdesliPrikaz(#27); prekreslit := true end;
+    59 : begin vstup := ''; NovaHra(SemenoCasu); NabidniVstup; prekreslit := true end; { F2 }
     75 : Inc(posun,Max(20,konecTextu-80));
     78 : posun := Max(0,posun-Max(20,konecTextu-80));
     77 : posun := 0;
-    79..82,73,76 : if vstup = '' then
+    79..82,73,76 :
       begin
+        if (e.scancode = 80) and (vstup <> '') then SmazZnak;
+        if vstup <> '' then Exit;
         case e.scancode of
           79 : kod := $4D00; 80 : kod := $4B00;
           81 : kod := $5000; 82 : kod := $4800;
@@ -286,19 +351,42 @@ begin
 end;
 
 procedure TextVstupu(const s : UTF8String);
-var dopln : string;
+var dopln : string; i : integer;
 begin
+  if faze = Odchod then
+  begin
+    for i := 1 to Length(s) do if UpCase(s[i]) in ['A','N'] then
+    begin vstup := UpCase(s[i]); Odesli; Break end;
+    Exit
+  end;
   if (s = '?') and (vstup = '') and (faze = Hra) then
-  begin OdesliPrikaz('?'); prekreslit := true; Exit end;
+  begin OdesliPrikaz('?'); NabidniVstup; prekreslit := true; Exit end;
   if (s = '.') and (faze = Hra) then begin Odesli; Exit end;
   if (vstup = '') and (faze = Hra) and ((s = '*') or (s = '+') or (s = '-')) then
   begin
     dopln := Zkratka(Ord(s[1]));
     vstup := dopln; Odesli; Exit
   end;
-  if faze <> Hotovo then
-    if Length(vstup+s) <= 120 then vstup := vstup+s;
-  if (faze = Odchod) and ((UpperCase(vstup) = 'A') or (UpperCase(vstup) = 'N')) then Odesli
+  if faze = Hra then
+  begin
+    for i := 1 to Length(s) do
+      if (s[i] in [' ','A'..'Z','a'..'z']) and (Length(vstup) < 60) then vstup := vstup+s[i]
+  end
+  else if faze = Jmeno then
+    if Length(vstup+s) <= 120 then vstup := vstup+s
+end;
+
+procedure Krok;
+var predtim : word;
+begin
+  { DOS NactiPrikaz kontroluje prazdny vstup pred prectenim klavesy. }
+  if not pozastaveno and (vstup = '') and (skladany = '') then
+  begin
+    predtim := pocetUdalosti;
+    Tik;
+    if pocetUdalosti <> predtim then NabidniVstup
+  end;
+  Udalosti
 end;
 
 procedure Udalosti;
@@ -310,9 +398,9 @@ begin
       SDL_EVENT_WINDOW_RESIZED,SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED : prekreslit := true;
       SDL_EVENT_WINDOW_FOCUS_LOST,SDL_EVENT_WILL_ENTER_BACKGROUND : Pauza(true);
       SDL_EVENT_WINDOW_FOCUS_GAINED,SDL_EVENT_DID_ENTER_FOREGROUND : Pauza(false);
-      SDL_EVENT_KEY_DOWN : if not pozastaveno then Klavesa(e.key);
-      SDL_EVENT_TEXT_INPUT : if not pozastaveno then TextVstupu(UTF8String(e.text.text));
-      SDL_EVENT_TEXT_EDITING : if not pozastaveno then skladany := UTF8String(e.edit.text);
+      SDL_EVENT_KEY_DOWN : if not pozastaveno and not zpracovavam then Klavesa(e.key);
+      SDL_EVENT_TEXT_INPUT : if not pozastaveno and not zpracovavam then TextVstupu(UTF8String(e.text.text));
+      SDL_EVENT_TEXT_EDITING : if not pozastaveno and not zpracovavam then skladany := UTF8String(e.edit.text);
       SDL_EVENT_MOUSE_WHEEL :
       begin
         if e.wheel.direction = 1 then e.wheel.y := -e.wheel.y;
@@ -320,7 +408,7 @@ begin
         begin posunPrikazu := Max(0,posunPrikazu-Round(e.wheel.y)*40); prekreslit := true end
         else posun := EnsureRange(posun+Round(e.wheel.y)*60,0,Max(0,vyskaTextu-(konecTextu-64)))
       end;
-      SDL_EVENT_MOUSE_BUTTON_DOWN : if not pozastaveno and (faze = Hra) and (e.button.button = 1) then
+      SDL_EVENT_MOUSE_BUTTON_DOWN : if not pozastaveno and not zpracovavam and (faze = Hra) and (e.button.button = 1) then
       begin
         x := Round(e.button.x); y := Round(e.button.y);
         if (y < zacatekPrikazu) or (y >= vyska-(body+72)) then Continue;
@@ -331,10 +419,9 @@ begin
           if (x >= oblast.x) and (x < oblast.x+oblast.w) and
              (y >= oblast.y) and (y < oblast.y+oblast.h) then
           begin
-            vstup := prikazy[i];
-            if Pos('(osoba)',vstup) > 0 then vstup := 'kde je '
-            else if Pos('(vec)',vstup) > 0 then vstup := 'kde najdu '
-            else Odesli;
+            if Pos('(osoba)',prikazy[i]) > 0 then VyberPrikaz('kde je ',false)
+            else if Pos('(vec)',prikazy[i]) > 0 then VyberPrikaz('kde najdu ',false)
+            else VyberPrikaz(prikazy[i],true);
             Break
           end
         end
@@ -393,7 +480,7 @@ begin
       SDL_SetWindowMinimumSize(herniOkno,360,320);
       kreslic := SDL_CreateRenderer(herniOkno,nil); Musi(kreslic <> nil);
       historie := TStringList.Create; historie.Add('');
-      Vystup := @VypisText; Hodiny := @HodinyHry; PripojVystup;
+      Vystup := @VypisText; Hodiny := @HodinyHry; Cekani := @Cekej; PripojVystup;
       cestaPisma := NajdiPismo;
       Musi(SDL_GetWindowSize(herniOkno,sirka,vyska));
       meritkoY := 1; meritkoX := 1;
@@ -405,20 +492,23 @@ begin
         SouborSkore := UTF8String(cesta)+'ARABELA.SCO'; SDL_free(cesta)
       end;
       SDL_StartTextInput(herniOkno);
-      NovaHra(StrToIntDef(Volba('--seed'),LongInt(SDL_GetTicks)));
+      {$IFDEF OVERENI_OKNA}
+      if Volba('--smoke') <> '' then Cekani := nil; { Full walkthrough runs in virtual time. }
+      {$ENDIF}
+      NovaHra(StrToIntDef(Volba('--seed'),SemenoCasu));
+      NabidniVstup;
       {$IFDEF OVERENI_OKNA}
       if Volba('--smoke') <> '' then
       begin OverOkno; Exit end;
       {$ENDIF}
       repeat
-        Udalosti;
-        if not pozastaveno and (vstup = '') and (skladany = '') then Tik;
+        Krok;
         Nakresli;
         SDL_RenderPresent(kreslic);
         SDL_Delay(16)
       until zavrit;
     finally
-      Vystup := nil; Hodiny := nil;
+      Vystup := nil; Hodiny := nil; Cekani := nil;
       for i := 0 to High(radky) do Uvolni(radky[i]);
       for i := 0 to High(tlacitka) do Uvolni(tlacitka[i]);
       historie.Free;
